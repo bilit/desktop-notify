@@ -1,0 +1,99 @@
+html, body, #root { margin: 0; background: transparent; overflow: hidden; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; color: #f1f5f9; user-select: none; }
+
+/* The Rust side sizes the window to this element, so it must wrap content exactly. */
+#stack { width: 380px; padding: 6px; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; }
+
+.card, .summary {
+  background: #0f172a; border: 1.5px solid #334155; border-radius: 10px;
+  padding: 12px 14px; box-sizing: border-box;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+}
+.mono { font-family: Consolas, 'Cascadia Mono', monospace; }
+.row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.meta { color: #fbbf24; font-size: 11px; }
+.title { font-weight: 700; font-size: 13px; }
+.text { color: #94a3b8; font-size: 11px; }
+.ttl { height: 4px; background: #1e293b; border-radius: 2px; margin-top: 8px; overflow: hidden; }
+.ttl > div { height: 100%; background: #3b82f6; }
+
+button { font: inherit; font-size: 11px; font-weight: 700; border: 0; border-radius: 4px; padding: 7px 0; color: #fff; cursor: pointer; }
+.btns { display: grid; gap: 8px; }
+.btns.three { grid-template-columns: 1fr 1fr 1fr; }
+.btns.two { grid-template-columns: 1fr 1fr; }
+/* Button variants a view can use, including as the `style` of a bulk action. `warn` is the "click again to confirm" state. */
+.primary { background: #059669; } .info { background: #2563eb; }
+.neutral { background: #1e293b; color: #cbd5e1; } .warn { background: #d97706; }
+
+/* ---- Panel mode (3+ notifications): fills the whole, user-resizable window ---- */
+#panel {
+  position: fixed; inset: 6px; display: flex; flex-direction: column;
+  background: #0f172a; border: 1.5px solid #334155; border-radius: 10px; overflow: hidden;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+}
+.panel-head {
+  display: flex; flex-direction: column; gap: 8px; padding: 12px 14px 10px;
+  border-bottom: 1px solid #1e293b; cursor: grab; flex: none;
+}
+/* Text must not swallow the mouse-down, or dragging the header wouldn't move the window. */
+.panel-title { pointer-events: none; }
+.panel-title h2 { margin: 0; font-size: 18px; }
+.panel-title .sub { color: #94a3b8; font-size: 11px; margin-top: 2px; }
+.bulks { display: flex; flex-direction: column; gap: 6px; cursor: default; }
+.bulk { display: flex; align-items: center; gap: 6px; }
+.bulk-label { flex: 1; font-size: 11px; color: #94a3b8; }
+.bulk button { padding: 6px 12px; }
+
+.plist-wrap { position: relative; flex: 1; min-height: 0; }
+.plist {
+  height: 100%; overflow-y: auto; box-sizing: border-box; padding: 10px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.plist .card { box-shadow: none; background: #0b1220; }
+.plist::-webkit-scrollbar { width: 10px; }
+.plist::-webkit-scrollbar-thumb { background: #334155; border-radius: 5px; }
+.plist::-webkit-scrollbar-track { background: transparent; }
+
+.new-chip {
+  position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 2;
+  background: #2563eb; padding: 5px 14px; border-radius: 999px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+/* Bottom-right resize handle (calls the window's resize-drag). */
+.grip {
+  position: absolute; right: 0; bottom: 0; width: 18px; height: 18px; cursor: nwse-resize; z-index: 3;
+  background: linear-gradient(135deg, transparent 50%, #475569 50%, #475569 58%, transparent 58%,
+              transparent 70%, #475569 70%, #475569 78%, transparent 78%);
+}
+
+/* With an app window configured, clicking a card opens it (buttons keep their own behaviour). */
+.openable { cursor: pointer; }
+.openable .card:hover { border-color: #475569; }
+.openable button { cursor: default; }
+
+/* The × on every card: hides it on this overlay only (see CardShell). Sits on the card's top-right corner. */
+.shell { position: relative; }
+.shell .close {
+  position: absolute; top: -5px; right: -5px; z-index: 2;
+  width: 20px; height: 20px; padding: 0; border-radius: 50%;
+  background: #334155; color: #cbd5e1; font-size: 14px; line-height: 20px; cursor: pointer;
+  opacity: 0.65; transition: opacity 0.12s, background 0.12s;
+}
+.shell:hover .close, .shell .close:focus-visible { opacity: 1; }
+.shell .close:hover { background: #64748b; color: #fff; }
+
+/* Panel: hide everything. Top-right of the header; the title block is pointer-events:none so dragging still works. */
+.panel-head { position: relative; }
+.panel-close {
+  position: absolute; top: 8px; right: 10px; z-index: 2;
+  width: 22px; height: 22px; padding: 0; border-radius: 50%;
+  background: #1e293b; color: #cbd5e1; font-size: 15px; line-height: 22px; cursor: pointer;
+}
+.panel-close:hover { background: #475569; color: #fff; }
+
+/* New arrivals pulse briefly so a burst is noticeable even in a scrolled list. */
+.fresh .card { animation: arrive 1.2s ease-out; }
+@keyframes arrive {
+  0% { border-color: #38bdf8; box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.45); }
+  100% { border-color: #334155; box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
+}

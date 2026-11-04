@@ -1,0 +1,31 @@
+{
+  "name": "desktop-notify",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Desktop notifications for an existing Node backend + web app: server module, web client, Tauri overlay.",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "examples/*",
+    "examples/*/*"
+  ],
+  "scripts": {
+    "test": "npm test --workspace packages/server",
+    "dropin": "node tools/dropin/build.mjs",
+    "dropin:verify": "node tools/dropin/verify.mjs",
+    "patch": "node tools/patch/build.mjs",
+    "patch:check": "node tools/patch/build.mjs --check",
+    "overlay:dev": "npm run tauri --workspace apps/overlay -- dev",
+    "overlay:build": "npm run tauri --workspace apps/overlay -- build",
+    "overlay:views": "node tools/overlay/run.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.1",
+    "esbuild": "^0.21.5",
+    "react": "^18.3.1",
+    "sonner": "^1.4.41",
+    "typescript": "^5.4.5"
+  }
+}

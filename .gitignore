@@ -1,0 +1,74 @@
+# ---------------------------------------------------------------------------------------------------------------
+# Not part of the repository
+# ---------------------------------------------------------------------------------------------------------------
+# Local demo apps stay in the working copy only. The library (packages/, apps/overlay, tools/) installs, tests and
+# builds without them; the `examples/*` workspace globs in the root package.json simply match nothing in a fresh clone.
+examples/
+
+# ---------------------------------------------------------------------------------------------------------------
+# Dependencies
+# ---------------------------------------------------------------------------------------------------------------
+node_modules/
+
+# ---------------------------------------------------------------------------------------------------------------
+# Build output (all regenerable)
+# ---------------------------------------------------------------------------------------------------------------
+# Vite builds (apps/overlay/dist) and the copy-paste drop-ins (dist/dropin, made by `npm run dropin`).
+# If you want to hand the drop-in files around via the repo, remove this line for dist/dropin.
+# (The checked-in patch lives in patches/, which is NOT ignored.)
+dist/
+
+# Rust / Tauri. `target/` is several GB; `gen/` holds schemas Tauri regenerates on every build.
+# Commit Cargo.lock (this is an application) and src-tauri/icons/ (the build needs them).
+apps/overlay/src-tauri/target/
+apps/overlay/src-tauri/gen/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# TypeScript / Vite caches
+*.tsbuildinfo
+.vite/
+
+# `npm pack` output
+*.tgz
+
+# Test coverage
+coverage/
+
+# ---------------------------------------------------------------------------------------------------------------
+# Secrets and local configuration: never commit these
+# ---------------------------------------------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# Code-signing and key material (Windows signing certificates, Tauri updater keys, TLS keys)
+*.pfx
+*.p12
+*.pem
+*.key
+*.snk
+
+# Claude Code per-machine settings
+.claude/settings.local.json
+
+# ---------------------------------------------------------------------------------------------------------------
+# Logs
+# ---------------------------------------------------------------------------------------------------------------
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# ---------------------------------------------------------------------------------------------------------------
+# Editors and OS
+# ---------------------------------------------------------------------------------------------------------------
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

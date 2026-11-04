@@ -1,0 +1,29 @@
+{
+  "name": "notify-server",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Embeddable notification server: per-user delivery, TTLs, first-action-wins, device tokens for the desktop overlay.",
+  "license": "MIT",
+  "type": "module",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    }
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "src",
+    "server.js"
+  ],
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
