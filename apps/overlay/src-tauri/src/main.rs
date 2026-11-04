@@ -19,8 +19,8 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{
-    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, PhysicalPosition, State, Url, WebviewUrl,
-    WebviewWindow, WebviewWindowBuilder, WindowEvent,
+    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, PhysicalPosition, State, Url, UserAttentionType,
+    WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent,
 };
 
 /// Global hotkey (works in any app): sends the text you have selected (no Ctrl+C needed) to the hub, which shows it
@@ -138,7 +138,48 @@ fn raise(window: &WebviewWindow, hold_ms: u64) -> Result<(), String> {
 /// Called by the UI when a NEW notification arrives (not for updates or resolutions).
 #[tauri::command]
 fn raise_overlay(window: WebviewWindow, hold_ms: Option<u64>) -> Result<(), String> {
-    raise(&window, hold_ms.unwrap_or(0))
+    raise(&window, hold_ms.unwrap_or(0))?;
+    // Once another app covers the cards there must still be a way to find them, so give the window a taskbar button and
+    // flash it. The flash does not take focus or interrupt typing; it stops when the user clicks the button or a card.
+    window.set_skip_taskbar(false).map_err(err)?;
+    window
+        .request_user_attention(Some(UserAttentionType::Informational))
+        .map_err(err)
+}
+
+/// The overlay has a taskbar button only while something is showing; with nothing live it stays out of the taskbar
+/// (and any pending flash is cancelled).
+#[tauri::command]
+fn set_taskbar(window: WebviewWindow, show: bool) -> Result<(), String> {
+    window.set_skip_taskbar(!show).map_err(err)?;
+    if !show {
+        window.request_user_attention(None).map_err(err)?;
+    }
+    Ok(())
+}
+
+/// The tray icon plus the tooltip it shows when nothing is waiting. The base text can carry a warning (for example that
+/// the hotkey was unavailable), which the live count must not overwrite.
+struct TrayInfo {
+    tray: tauri::tray::TrayIcon,
+    base: Mutex<String>,
+}
+
+/// Tray tooltip text. Windows cuts tooltips at 127 characters, so stay under that.
+fn tray_tooltip(base: &str, live: usize, hidden: usize) -> String {
+    let text = match (live, hidden) {
+        (0, _) => base.to_string(),
+        (n, 0) => format!("{base}: {n} waiting"),
+        (n, h) => format!("{base}: {n} waiting ({h} hidden, click to show)"),
+    };
+    text.chars().take(127).collect()
+}
+
+/// Keeps the tray tooltip in step with what is live, so the count is visible without opening anything.
+#[tauri::command]
+fn set_tray_status(state: State<TrayInfo>, live: usize, hidden: usize) -> Result<(), String> {
+    let base = state.base.lock().unwrap().clone();
+    state.tray.set_tooltip(Some(tray_tooltip(&base, live, hidden))).map_err(err)
 }
 
 /// Cards mode: the webview calls this after every layout change so the window hugs its content.
@@ -282,6 +323,8 @@ fn main() {
             fit_overlay,
             set_panel_mode,
             raise_overlay,
+            set_taskbar,
+            set_tray_status,
             open_in_app,
             app_configured,
             overlay_identity
@@ -373,11 +416,15 @@ fn main() {
                     capture_and_send(app.clone());
                 }
             });
+            let mut base = "Notify Overlay".to_string();
             if let Err(e) = registered {
                 // Another app already owns this combination (or it didn't parse). Say so instead of failing silently.
                 eprintln!("could not register hotkey '{hotkey}': {e}");
-                let _ = tray.set_tooltip(Some(format!("Notify Overlay (hotkey {hotkey} unavailable)")));
+                base = format!("Notify Overlay (hotkey {hotkey} unavailable)");
+                let _ = tray.set_tooltip(Some(base.clone()));
             }
+            // The UI updates the tooltip with a live count; it needs the tray handle and this warning to build the text.
+            app.manage(TrayInfo { tray, base: Mutex::new(base) });
             Ok(())
         })
         .run(tauri::generate_context!())
@@ -420,6 +467,19 @@ mod tests {
         let script = dispatch_script(&json!({ "id": "a", "kind": "k", "data": { "title": hostile } })).unwrap();
         assert!(script.contains(r#"x\"});alert(document.cookie);//"#), "quote must be escaped: {script}");
         assert!(!script.contains(r#"":"x"});"#), "unescaped break-out present: {script}");
+    }
+
+    #[test]
+    fn tray_tooltip_shows_the_count_and_keeps_the_base_warning() {
+        assert_eq!(tray_tooltip("Notify Overlay", 0, 0), "Notify Overlay");
+        assert_eq!(tray_tooltip("Notify Overlay", 0, 3), "Notify Overlay", "nothing live: no count, even if ids linger");
+        assert_eq!(tray_tooltip("Notify Overlay", 3, 0), "Notify Overlay: 3 waiting");
+        assert_eq!(tray_tooltip("Notify Overlay", 3, 2), "Notify Overlay: 3 waiting (2 hidden, click to show)");
+        // the hotkey warning is part of the base and must survive
+        let warn = "Notify Overlay (hotkey ctrl+shift+j unavailable)";
+        assert!(tray_tooltip(warn, 1, 0).starts_with(warn));
+        // Windows truncates tooltips at 127 characters; never hand it more
+        assert_eq!(tray_tooltip(&"x".repeat(300), 5, 1).chars().count(), 127);
     }
 
     #[test]

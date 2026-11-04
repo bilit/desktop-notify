@@ -129,10 +129,10 @@ index 0000000000000000000000000000000000000000..21e967c6ea354dafc1455392c3c02a81
 +SOFTWARE.
 diff --git a/README.md b/README.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..bddf9f010a1dea4395cb518a6191449ea0b43fda
+index 0000000000000000000000000000000000000000..b2962a6c19144ae887abfaa664ada8061215a851
 --- /dev/null
 +++ b/README.md
-@@ -0,0 +1,394 @@
+@@ -0,0 +1,399 @@
 +# desktop-notify
 +
 +Add **desktop notifications** to an existing Node backend + web app. Your backend publishes a notification; users
@@ -464,8 +464,13 @@ index 0000000000000000000000000000000000000000..bddf9f010a1dea4395cb518a6191449e
 +  hidden ones back.
 +- **Stacking:** not permanently always-on-top. A NEW notification raises the window above everything and holds it there
 +  for 5s (`RAISE_HOLD_MS` in `src/notify/Overlay.jsx`; `0` = raise once, no hold), then it behaves like a normal window,
-+  so clicking another app covers it. Updates and resolutions never raise it. **Left-click the tray icon** to bring a
-+  buried overlay forward (it has no taskbar button).
++  so clicking another app covers it. Updates and resolutions never raise it.
++- **Finding a buried card:** while at least one notification is showing, the overlay has a **taskbar button**, and a new
++  arrival makes it **flash** (without taking focus or interrupting typing) until you click it or a card. Click the
++  button, or left-click the tray icon, to bring the cards forward. With nothing showing, the button goes away. The tray
++  tooltip carries the live count ("Notify Overlay: 3 waiting", plus "(2 hidden, click to show)" if you've hidden some).
++  Windows 11 tucks new tray icons into the **^** overflow; drag the icon onto the taskbar or enable it under Settings,
++  Personalization, Taskbar, Other system tray icons.
 +- **Focus:** cards don't take keyboard focus when they appear.
 +- **App window (optional, experimental):** set `NOTIFY_APP_URL` to your web app's http(s) address and the overlay also
 +  hosts it in a normal window (created hidden; tray → "Open app" shows it; closing it hides it, the overlay keeps
@@ -6944,10 +6949,10 @@ HcmV?d00001
 
 diff --git a/apps/overlay/src-tauri/src/main.rs b/apps/overlay/src-tauri/src/main.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..ffff53ddee11ad5684a3942c3348952754caa187
+index 0000000000000000000000000000000000000000..402e40a23a00ca72b4b2abb3d121e3d1d400d2a0
 --- /dev/null
 +++ b/apps/overlay/src-tauri/src/main.rs
-@@ -0,0 +1,444 @@
+@@ -0,0 +1,504 @@
 +// Hide the console window in release builds on Windows.
 +#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 +
@@ -6969,8 +6974,8 @@ index 0000000000000000000000000000000000000000..ffff53ddee11ad5684a3942c33489527
 +use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 +use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 +use tauri::{
-+    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, PhysicalPosition, State, Url, WebviewUrl,
-+    WebviewWindow, WebviewWindowBuilder, WindowEvent,
++    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, PhysicalPosition, State, Url, UserAttentionType,
++    WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent,
 +};
 +
 +/// Global hotkey (works in any app): sends the text you have selected (no Ctrl+C needed) to the hub, which shows it
@@ -7088,7 +7093,48 @@ index 0000000000000000000000000000000000000000..ffff53ddee11ad5684a3942c33489527
 +/// Called by the UI when a NEW notification arrives (not for updates or resolutions).
 +#[tauri::command]
 +fn raise_overlay(window: WebviewWindow, hold_ms: Option<u64>) -> Result<(), String> {
-+    raise(&window, hold_ms.unwrap_or(0))
++    raise(&window, hold_ms.unwrap_or(0))?;
++    // Once another app covers the cards there must still be a way to find them, so give the window a taskbar button and
++    // flash it. The flash does not take focus or interrupt typing; it stops when the user clicks the button or a card.
++    window.set_skip_taskbar(false).map_err(err)?;
++    window
++        .request_user_attention(Some(UserAttentionType::Informational))
++        .map_err(err)
++}
++
++/// The overlay has a taskbar button only while something is showing; with nothing live it stays out of the taskbar
++/// (and any pending flash is cancelled).
++#[tauri::command]
++fn set_taskbar(window: WebviewWindow, show: bool) -> Result<(), String> {
++    window.set_skip_taskbar(!show).map_err(err)?;
++    if !show {
++        window.request_user_attention(None).map_err(err)?;
++    }
++    Ok(())
++}
++
++/// The tray icon plus the tooltip it shows when nothing is waiting. The base text can carry a warning (for example that
++/// the hotkey was unavailable), which the live count must not overwrite.
++struct TrayInfo {
++    tray: tauri::tray::TrayIcon,
++    base: Mutex<String>,
++}
++
++/// Tray tooltip text. Windows cuts tooltips at 127 characters, so stay under that.
++fn tray_tooltip(base: &str, live: usize, hidden: usize) -> String {
++    let text = match (live, hidden) {
++        (0, _) => base.to_string(),
++        (n, 0) => format!("{base}: {n} waiting"),
++        (n, h) => format!("{base}: {n} waiting ({h} hidden, click to show)"),
++    };
++    text.chars().take(127).collect()
++}
++
++/// Keeps the tray tooltip in step with what is live, so the count is visible without opening anything.
++#[tauri::command]
++fn set_tray_status(state: State<TrayInfo>, live: usize, hidden: usize) -> Result<(), String> {
++    let base = state.base.lock().unwrap().clone();
++    state.tray.set_tooltip(Some(tray_tooltip(&base, live, hidden))).map_err(err)
 +}
 +
 +/// Cards mode: the webview calls this after every layout change so the window hugs its content.
@@ -7232,6 +7278,8 @@ index 0000000000000000000000000000000000000000..ffff53ddee11ad5684a3942c33489527
 +            fit_overlay,
 +            set_panel_mode,
 +            raise_overlay,
++            set_taskbar,
++            set_tray_status,
 +            open_in_app,
 +            app_configured,
 +            overlay_identity
@@ -7323,11 +7371,15 @@ index 0000000000000000000000000000000000000000..ffff53ddee11ad5684a3942c33489527
 +                    capture_and_send(app.clone());
 +                }
 +            });
++            let mut base = "Notify Overlay".to_string();
 +            if let Err(e) = registered {
 +                // Another app already owns this combination (or it didn't parse). Say so instead of failing silently.
 +                eprintln!("could not register hotkey '{hotkey}': {e}");
-+                let _ = tray.set_tooltip(Some(format!("Notify Overlay (hotkey {hotkey} unavailable)")));
++                base = format!("Notify Overlay (hotkey {hotkey} unavailable)");
++                let _ = tray.set_tooltip(Some(base.clone()));
 +            }
++            // The UI updates the tooltip with a live count; it needs the tray handle and this warning to build the text.
++            app.manage(TrayInfo { tray, base: Mutex::new(base) });
 +            Ok(())
 +        })
 +        .run(tauri::generate_context!())
@@ -7370,6 +7422,19 @@ index 0000000000000000000000000000000000000000..ffff53ddee11ad5684a3942c33489527
 +        let script = dispatch_script(&json!({ "id": "a", "kind": "k", "data": { "title": hostile } })).unwrap();
 +        assert!(script.contains(r#"x\"});alert(document.cookie);//"#), "quote must be escaped: {script}");
 +        assert!(!script.contains(r#"":"x"});"#), "unescaped break-out present: {script}");
++    }
++
++    #[test]
++    fn tray_tooltip_shows_the_count_and_keeps_the_base_warning() {
++        assert_eq!(tray_tooltip("Notify Overlay", 0, 0), "Notify Overlay");
++        assert_eq!(tray_tooltip("Notify Overlay", 0, 3), "Notify Overlay", "nothing live: no count, even if ids linger");
++        assert_eq!(tray_tooltip("Notify Overlay", 3, 0), "Notify Overlay: 3 waiting");
++        assert_eq!(tray_tooltip("Notify Overlay", 3, 2), "Notify Overlay: 3 waiting (2 hidden, click to show)");
++        // the hotkey warning is part of the base and must survive
++        let warn = "Notify Overlay (hotkey ctrl+shift+j unavailable)";
++        assert!(tray_tooltip(warn, 1, 0).starts_with(warn));
++        // Windows truncates tooltips at 127 characters; never hand it more
++        assert_eq!(tray_tooltip(&"x".repeat(300), 5, 1).chars().count(), 127);
 +    }
 +
 +    #[test]
@@ -7758,10 +7823,10 @@ index 0000000000000000000000000000000000000000..12bdee0c9965fb9a4c9271e13adcc07f
 +}
 diff --git a/apps/overlay/src/notify/Overlay.jsx b/apps/overlay/src/notify/Overlay.jsx
 new file mode 100644
-index 0000000000000000000000000000000000000000..4696d737a7dd317fc6c1b07c7a7600ddccb1e524
+index 0000000000000000000000000000000000000000..eb2e818f9e76c4986c04a16d322c2ce6a5b8546b
 --- /dev/null
 +++ b/apps/overlay/src/notify/Overlay.jsx
-@@ -0,0 +1,197 @@
+@@ -0,0 +1,209 @@
 +import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 +import { listen } from '@tauri-apps/api/event';
 +import { invoke } from '@tauri-apps/api/core';
@@ -7929,10 +7994,22 @@ index 0000000000000000000000000000000000000000..4696d737a7dd317fc6c1b07c7a7600dd
 +  }, []);
 +
 +  // --- New notification: jump above everything and hold there briefly, then behave like a normal window.
-+  // Runs after the layout effect below has sized and shown the window, so there is something to raise.
++  // Runs after the layout effect below has sized and shown the window, so there is something to raise. Raising also
++  // gives the window a taskbar button and flashes it, so a card buried under another app can still be found.
 +  useEffect(() => {
 +    if (arrivals > 0) invoke('raise_overlay', { holdMs: RAISE_HOLD_MS });
 +  }, [arrivals]);
++
++  // A taskbar button exists only while something is showing; with nothing to show the overlay stays out of the taskbar.
++  const anyVisible = visible.length > 0;
++  useEffect(() => {
++    invoke('set_taskbar', { show: anyVisible }).catch(() => {});
++  }, [anyVisible]);
++
++  // The tray tooltip carries the live count, so "is anything waiting?" never needs a window.
++  useEffect(() => {
++    invoke('set_tray_status', { live: items.length, hidden: hidden.size }).catch(() => {});
++  }, [items.length, hidden.size]);
 +
 +  // --- Cards mode: the window hugs its content. Panel mode: the user owns the size. ---
 +  useLayoutEffect(() => {

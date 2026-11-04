@@ -329,8 +329,13 @@ token-protected: plugins are trusted, local code.
   hidden ones back.
 - **Stacking:** not permanently always-on-top. A NEW notification raises the window above everything and holds it there
   for 5s (`RAISE_HOLD_MS` in `src/notify/Overlay.jsx`; `0` = raise once, no hold), then it behaves like a normal window,
-  so clicking another app covers it. Updates and resolutions never raise it. **Left-click the tray icon** to bring a
-  buried overlay forward (it has no taskbar button).
+  so clicking another app covers it. Updates and resolutions never raise it.
+- **Finding a buried card:** while at least one notification is showing, the overlay has a **taskbar button**, and a new
+  arrival makes it **flash** (without taking focus or interrupting typing) until you click it or a card. Click the
+  button, or left-click the tray icon, to bring the cards forward. With nothing showing, the button goes away. The tray
+  tooltip carries the live count ("Notify Overlay: 3 waiting", plus "(2 hidden, click to show)" if you've hidden some).
+  Windows 11 tucks new tray icons into the **^** overflow; drag the icon onto the taskbar or enable it under Settings,
+  Personalization, Taskbar, Other system tray icons.
 - **Focus:** cards don't take keyboard focus when they appear.
 - **App window (optional, experimental):** set `NOTIFY_APP_URL` to your web app's http(s) address and the overlay also
   hosts it in a normal window (created hidden; tray → "Open app" shows it; closing it hides it, the overlay keeps

@@ -165,10 +165,22 @@ export default function Overlay({ views = {} }) {
   }, []);
 
   // --- New notification: jump above everything and hold there briefly, then behave like a normal window.
-  // Runs after the layout effect below has sized and shown the window, so there is something to raise.
+  // Runs after the layout effect below has sized and shown the window, so there is something to raise. Raising also
+  // gives the window a taskbar button and flashes it, so a card buried under another app can still be found.
   useEffect(() => {
     if (arrivals > 0) invoke('raise_overlay', { holdMs: RAISE_HOLD_MS });
   }, [arrivals]);
+
+  // A taskbar button exists only while something is showing; with nothing to show the overlay stays out of the taskbar.
+  const anyVisible = visible.length > 0;
+  useEffect(() => {
+    invoke('set_taskbar', { show: anyVisible }).catch(() => {});
+  }, [anyVisible]);
+
+  // The tray tooltip carries the live count, so "is anything waiting?" never needs a window.
+  useEffect(() => {
+    invoke('set_tray_status', { live: items.length, hidden: hidden.size }).catch(() => {});
+  }, [items.length, hidden.size]);
 
   // --- Cards mode: the window hugs its content. Panel mode: the user owns the size. ---
   useLayoutEffect(() => {
